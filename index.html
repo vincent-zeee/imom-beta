@@ -352,6 +352,16 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
   animation: fadeIn .2s ease;
 }
 .preview-card.show { display: block; }
+.disclaimer-bar {
+  font-size: 11.5px;
+  color: var(--ink3);
+  background: var(--paper2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
 .preview-header {
   display: flex;
   align-items: center;
@@ -1000,6 +1010,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
     <textarea id="setup-traits" class="settings-input" style="min-height:90px;font-family:'Noto Sans KR',sans-serif" placeholder="예) 고집이 세고 스스로 하려는 욕구가 강함. 새로운 환경에 적응이 느린 편. 좋아하는 것: 그림 그리기, 자동차."></textarea>
 
     <button class="auth-btn" style="margin-top:18px" onclick="saveChildSetup()">시작하기</button>
+    <div style="font-size:11px;color:var(--ink3);line-height:1.6;margin-top:14px;text-align:center">이 앱의 분석은 아이를 더 잘 들여다보기 위한 참고용 기록이에요.<br>의학적 진단·평가가 아니며, 발달이 걱정되면 소아과나 전문가와 상담하세요.</div>
     <button class="auth-btn-ghost" onclick="doLogout()">로그아웃</button>
   </div>
 </div>
@@ -1038,6 +1049,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 <div class="page active" id="page-timeline">
   <div class="page-title">타임라인</div>
   <div class="page-sub" id="tl-sub">불러오는 중...</div>
+  <div class="disclaimer-bar">참고용 기록이에요. 의학적 진단이나 평가가 아니니, 걱정되는 점이 있으면 전문가와 이야기해보세요.</div>
   <div class="tl-list" id="tl-list"></div>
 </div>
 
@@ -1083,6 +1095,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
   </div>
 
   <div class="preview-card" id="preview-card">
+    <div class="disclaimer-bar">참고용 기록이에요. 의학적 진단이나 평가가 아니니, 걱정되는 점이 있으면 전문가와 이야기해보세요.</div>
     <div class="input-label">분석 결과 확인</div>
     <div class="preview-header">
       <span class="tag" id="prev-tag"></span>
@@ -1308,15 +1321,9 @@ async function callAnthropic(key, body) {
 }
 
 function updateTokenDisplay(thisCall, total) {
+  // 베타에서는 토큰/비용 표시를 숨김 (내부 카운트만 유지)
   const info = document.getElementById('token-info');
-  if (info) info.style.display = 'block';
-  const el1 = document.getElementById('tok-this');
-  const el2 = document.getElementById('tok-total');
-  const el3 = document.getElementById('tok-cost');
-  if (el1) el1.textContent = thisCall.toLocaleString();
-  if (el2) el2.textContent = total.toLocaleString();
-  // claude-sonnet-4-6: input $3/1M, output $15/1M (roughly $3 avg)
-  if (el3) el3.textContent = '$' + (total / 1000000 * 9).toFixed(4);
+  if (info) info.style.display = 'none';
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1410,6 +1417,13 @@ ${traitsBlock}${ageNote}
 - 라벨 주의: "통제적인 아이", "착한 아이", "똑똑한 아이" 같은 라벨보다 그 순간 아이가 한 것을 구체적으로 묘사
 - 부정적이거나 미숙한 점도 있는 그대로 적을 것. 좋은 말만 하지 말 것
 - 일반적인 발달 단계 설명을 늘어놓기보다, 이 아이의 이 관찰에 집중
+
+【의학적 판단 절대 금지 — 매우 중요】
+- "발달 지연", "자폐", "ADHD", "장애", "정상/비정상", "또래보다 느리다/빠르다" 같은 진단·의학적 단정을 절대 하지 말 것
+- 이 앱은 의료 도구가 아니며 당신은 의사가 아님. 어떤 행동도 "문제가 있다/없다"로 판정하지 말 것
+- 치료, 교정, 훈련을 지시하지 말 것
+- 부모가 걱정할 만한 행동이 보이더라도, 진단하거나 안심시키지 말고 "혹시 궁금하거나 신경 쓰이는 점이 있으면 소아과나 발달 전문가와 편하게 이야기해보셔도 좋아요" 정도의 부드러운 안내로만 마무리할 것
+- 관찰된 행동 그 자체를 따뜻하게 묘사하는 데 집중하고, 의학적 해석은 하지 말 것
 
 【어투】
 - 논문이나 보고서 같은 딱딱한 문어체를 쓰지 말 것. "~이다", "~중요한 관찰 포인트다", "~데 도움이 된다" 같은 단정형 종결을 피할 것
