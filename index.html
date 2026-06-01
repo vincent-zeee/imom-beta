@@ -1237,14 +1237,12 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
   </div>
 
   <div class="settings-card">
-    <div class="settings-label">Anthropic API Key</div>
+    <div class="settings-label">AI 연결</div>
     <div class="settings-desc">
-      <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a>에서 발급받은 API Key를 입력하세요.<br>
-      Key는 이 기기에만 저장되고, AI 분석을 호출할 때 Anthropic 서버에만 사용돼요.
+      이 베타 버전은 AI 분석이 <b>이미 연결되어 있어요.</b><br>
+      별도의 API Key 입력 없이 바로 기록하고 분석할 수 있어요.
     </div>
-    <input type="password" id="api-key-input" class="settings-input" placeholder="sk-ant-...">
     <div class="settings-row">
-      <button class="btn btn-primary" onclick="saveApiKey()">저장</button>
       <button class="btn" onclick="testApiKey()">연결 테스트</button>
       <span class="save-msg" id="api-save-msg"></span>
     </div>
@@ -1294,17 +1292,14 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 <script>
 
 // ════════════════════════════════════════════════════════════
-// API 호출 헬퍼 — 로컬 서버 프록시 경유
+// API 호출 헬퍼 — Cloudflare Worker 프록시 경유 (키는 서버에 숨김)
 // ════════════════════════════════════════════════════════════
+const PROXY_URL = 'https://imom-beta.vincent-zeee.workers.dev';
 async function callAnthropic(key, body) {
-  const useKey = (key && key !== '__server__') ? key : apiKey;
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch(PROXY_URL, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': useKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify(body)
   });
@@ -1615,12 +1610,9 @@ function localKey() {
 }
 
 async function loadData() {
-  // API 키는 이 기기(localStorage)에만 저장돼요. Firestore로 동기화되지 않습니다.
-  apiKey = localStorage.getItem(SK_KEY) || '';
-  if (apiKey) {
-    const inp = document.getElementById('api-key-input');
-    if (inp) inp.value = '(저장됨)';
-  }
+  // 베타: 키는 Cloudflare Worker(서버)에 숨겨져 있으므로
+  // 사용자는 키를 입력할 필요가 없다. 항상 프록시 모드로 동작.
+  apiKey = '__server__';
 
   if (window._fbDoc && window._fbGetDoc) {
     try {
@@ -2411,34 +2403,22 @@ async function addCp() {
 // 설정
 // ════════════════════════════════════════════════════════════
 async function saveApiKey() {
-  const key = document.getElementById('api-key-input').value.trim();
-  if (!key || key === '(저장됨)') return;
-  apiKey = key;
-  localStorage.setItem(SK_KEY, key);   // 이 기기에만 저장 (Firestore로 안 올라감)
-  updateApiStatus();
-  document.getElementById('api-key-input').value = '(저장됨)';
-  document.getElementById('api-save-msg').textContent = '저장됐어요 ✓';
-  setTimeout(() => document.getElementById('api-save-msg').textContent = '', 2000);
+  // 베타: 키는 서버(Worker)에 있으므로 저장할 것이 없다. (호환용 빈 함수)
+  return;
 }
 
 async function testApiKey() {
-  const key = document.getElementById('api-key-input').value.trim();
-  if (!key || key === '(저장됨)') { alert('API Key를 입력해주세요.'); return; }
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch(PROXY_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] })
     });
     const data = await res.json();
     if (res.ok) {
-      alert('✅ 연결 성공!');
-      await saveApiKey();
+      alert('✅ 연결 성공! 바로 사용하실 수 있어요.');
     } else {
       alert('❌ 오류: ' + (data.error?.message || res.status));
     }
