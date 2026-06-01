@@ -1294,7 +1294,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 // ════════════════════════════════════════════════════════════
 // API 호출 헬퍼 — Cloudflare Worker 프록시 경유 (키는 서버에 숨김)
 // ════════════════════════════════════════════════════════════
-const PROXY_URL = 'https://imom-beta.vincent-zeee.workers.dev';
+const PROXY_URL = 'https://imom-beta-proxy.vercel.app/api/proxy';
 
 // ── 생년월일 입력: 숫자만 치면 "YYYY년 MM월 DD일"로 자동 표시 ──
 function formatBirth(el) {
