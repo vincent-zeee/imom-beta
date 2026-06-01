@@ -1745,6 +1745,28 @@ async function saveData() {
   // Firebase 저장
   if (window._fbDoc && window._fbSetDoc) {
     try {
+      // ── 빈 데이터 덮어쓰기 가드 ──
+      // 메모리상 기록이 비어있는데 서버 문서엔 기록이 많으면, 사고(잘못된 config·새 로그인 등)일
+      // 가능성이 높다. 그대로 덮으면 데이터가 통째로 날아가므로, 한 번 멈추고 사용자 확인을 받는다.
+      if ((observations || []).length === 0 && window._fbGetDoc) {
+        try {
+          const snap = await window._fbGetDoc(window._fbDoc);
+          if (snap.exists()) {
+            const remote = snap.data() || {};
+            const remoteCount = (remote.observations || []).length;
+            if (remoteCount > 0) {
+              const ok = confirm(
+                `⚠️ 안전 확인\n\n` +
+                `지금 화면의 기록은 비어있는데, 서버에는 기록 ${remoteCount}개가 저장돼 있어요.\n` +
+                `이대로 저장하면 서버의 기록 ${remoteCount}개가 모두 사라집니다.\n\n` +
+                `정말 덮어쓸까요?\n` +
+                `(취소를 누르면 저장하지 않습니다. 데이터가 사라진 게 아니라면 취소하세요.)`
+              );
+              if (!ok) { showSyncStatus('⚠ 저장 취소됨 (서버 기록 보존)'); return; }
+            }
+          }
+        } catch(e) { /* 읽기 실패 시 가드는 통과 — 평소처럼 저장 진행 */ }
+      }
       await window._fbSetDoc(window._fbDoc, payload);
       showSyncStatus('✓ 저장됨');
     } catch(e) {
@@ -2544,7 +2566,7 @@ async function testApiKey() {
 // JSON 내보내기 / 가져오기
 // ════════════════════════════════════════════════════════════
 function exportJSON() {
-  const data = JSON.stringify({ observations, checkpoints, exportedAt: new Date().toISOString() }, null, 2);
+  const data = JSON.stringify({ observations, checkpoints, monthlyReports, childInfo, exportedAt: new Date().toISOString() }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2561,9 +2583,13 @@ async function handleImport(input) {
   const text = await file.text();
   try {
     const data = JSON.parse(text);
-    if (data.observations) observations = data.observations;
-    if (data.checkpoints)  checkpoints  = data.checkpoints;
+    if (Array.isArray(data.observations))   observations   = data.observations;
+    if (Array.isArray(data.checkpoints))    checkpoints    = data.checkpoints;
+    if (Array.isArray(data.monthlyReports)) monthlyReports = data.monthlyReports;
+    if (data.childInfo)                     childInfo      = data.childInfo;
+    migrateChildData();
     await saveData();
+    applyChildInfoToUI();
     renderAll();
     toast('가져오기 완료 ✓');
   } catch(e) { alert('파일 형식이 올바르지 않아요.'); }
