@@ -996,7 +996,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
     <input type="text" id="setup-name" class="settings-input" placeholder="예: 유비" style="margin-bottom:14px">
 
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin-bottom:6px">생년월일 <span style="color:#C44">*</span></div>
-    <input type="date" id="setup-birth" class="settings-input" style="margin-bottom:14px;width:100%">
+    <input type="text" id="setup-birth" class="settings-input" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="예: 2023년 08월 25일" oninput="formatBirth(this)" style="margin-bottom:14px;width:100%">
 
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin-bottom:6px">성별 (선택)</div>
     <select id="setup-sex" class="settings-input" style="margin-bottom:14px;width:100%">
@@ -1198,7 +1198,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin:10px 0 6px">이름</div>
     <input type="text" id="set-child-name" class="settings-input" placeholder="아이 이름">
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin:12px 0 6px">생년월일</div>
-    <input type="date" id="set-child-birth" class="settings-input" style="width:100%">
+    <input type="text" id="set-child-birth" class="settings-input" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="예: 2023년 08월 25일" oninput="formatBirth(this)" style="width:100%">
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin:12px 0 6px">성별</div>
     <select id="set-child-sex" class="settings-input" style="width:100%">
       <option value="">선택 안 함</option>
@@ -1295,6 +1295,33 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 // API 호출 헬퍼 — Cloudflare Worker 프록시 경유 (키는 서버에 숨김)
 // ════════════════════════════════════════════════════════════
 const PROXY_URL = 'https://imom-beta.vincent-zeee.workers.dev';
+
+// ── 생년월일 입력: 숫자만 치면 "YYYY년 MM월 DD일"로 자동 표시 ──
+function formatBirth(el) {
+  let d = el.value.replace(/[^0-9]/g, '').slice(0, 8); // 숫자만, 최대 8자리
+  let out = '';
+  if (d.length > 0) out = d.slice(0, 4);
+  if (d.length >= 4) out += '년';
+  if (d.length > 4) out += ' ' + d.slice(4, 6);
+  if (d.length >= 6) out += '월';
+  if (d.length > 6) out += ' ' + d.slice(6, 8);
+  if (d.length >= 8) out += '일';
+  el.value = out;
+}
+// 화면 표시값("2023년 08월 25일") → 저장값("2023-08-25"). 형식이 안 맞으면 '' 반환
+function birthDisplayToISO(str) {
+  const d = (str || '').replace(/[^0-9]/g, '');
+  if (d.length !== 8) return '';
+  const y = +d.slice(0, 4), m = +d.slice(4, 6), day = +d.slice(6, 8);
+  if (m < 1 || m > 12 || day < 1 || day > 31) return '';
+  return d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8);
+}
+// 저장값("2023-08-25") → 화면 표시값("2023년 08월 25일")
+function birthISOToDisplay(iso) {
+  const d = (iso || '').replace(/[^0-9]/g, '');
+  if (d.length !== 8) return '';
+  return d.slice(0, 4) + '년 ' + d.slice(4, 6) + '월 ' + d.slice(6, 8) + '일';
+}
 async function callAnthropic(key, body) {
   const res = await fetch(PROXY_URL, {
     method: 'POST',
@@ -1571,11 +1598,11 @@ function enterApp() {
 // 아이 정보 등록 저장 (등록 화면에서)
 async function saveChildSetup() {
   const name = document.getElementById('setup-name').value.trim();
-  const birth = document.getElementById('setup-birth').value;
+  const birth = birthDisplayToISO(document.getElementById('setup-birth').value);
   const sex = document.getElementById('setup-sex').value;
   const traits = document.getElementById('setup-traits').value.trim();
   if (!name) { alert('아이 이름을 입력해주세요.'); return; }
-  if (!birth) { alert('생년월일을 입력해주세요.'); return; }
+  if (!birth) { alert('생년월일을 8자리로 입력해주세요. (예: 20230825)'); return; }
   childInfo = { name, birth, sex, traits };
   await saveData();
   enterApp();
@@ -2514,7 +2541,7 @@ function applyChildInfoToUI() {
     const s = document.getElementById('set-child-sex');
     const t = document.getElementById('set-child-traits');
     if (n) n.value = childInfo.name || '';
-    if (b) b.value = childInfo.birth || '';
+    if (b) b.value = birthISOToDisplay(childInfo.birth || '');
     if (s) s.value = childInfo.sex || '';
     if (t) t.value = childInfo.traits || '';
   }
@@ -2526,11 +2553,11 @@ function applyChildInfoToUI() {
 // 설정 화면에서 아이 정보 저장
 async function saveChildInfo() {
   const name = document.getElementById('set-child-name').value.trim();
-  const birth = document.getElementById('set-child-birth').value;
+  const birth = birthDisplayToISO(document.getElementById('set-child-birth').value);
   const sex = document.getElementById('set-child-sex').value;
   const traits = document.getElementById('set-child-traits').value.trim();
   if (!name) { alert('아이 이름을 입력해주세요.'); return; }
-  if (!birth) { alert('생년월일을 입력해주세요.'); return; }
+  if (!birth) { alert('생년월일을 8자리로 입력해주세요. (예: 20230825)'); return; }
   childInfo = { name, birth, sex, traits };
   await saveData();
   applyChildInfoToUI();
