@@ -996,7 +996,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
     <input type="text" id="setup-name" class="settings-input" placeholder="예: 유비" style="margin-bottom:14px">
 
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin-bottom:6px">생년월일 <span style="color:#C44">*</span></div>
-    <input type="text" id="setup-birth" class="settings-input" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="예: 2023년 08월 25일" oninput="formatBirth(this)" style="margin-bottom:14px;width:100%">
+    <input type="text" id="setup-birth" class="settings-input" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="예: 2023년 08월 25일" oninput="formatBirth(event)" style="margin-bottom:14px;width:100%">
 
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin-bottom:6px">성별 (선택)</div>
     <select id="setup-sex" class="settings-input" style="margin-bottom:14px;width:100%">
@@ -1198,7 +1198,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin:10px 0 6px">이름</div>
     <input type="text" id="set-child-name" class="settings-input" placeholder="아이 이름">
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin:12px 0 6px">생년월일</div>
-    <input type="text" id="set-child-birth" class="settings-input" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="예: 2023년 08월 25일" oninput="formatBirth(this)" style="width:100%">
+    <input type="text" id="set-child-birth" class="settings-input" inputmode="numeric" maxlength="13" autocomplete="off" placeholder="예: 2023년 08월 25일" oninput="formatBirth(event)" style="width:100%">
     <div style="font-size:12px;font-weight:500;color:var(--ink2);margin:12px 0 6px">성별</div>
     <select id="set-child-sex" class="settings-input" style="width:100%">
       <option value="">선택 안 함</option>
@@ -1294,19 +1294,28 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 // ════════════════════════════════════════════════════════════
 // API 호출 헬퍼 — Cloudflare Worker 프록시 경유 (키는 서버에 숨김)
 // ════════════════════════════════════════════════════════════
-const PROXY_URL = 'https://imom-beta-proxy.vercel.app/api/proxy';
+const PROXY_URL = 'https://imom-beta.vincent-zeee.workers.dev';
 
 // ── 생년월일 입력: 숫자만 치면 "YYYY년 MM월 DD일"로 자동 표시 ──
-function formatBirth(el) {
+function formatBirth(e) {
+  const el = (e && e.target) ? e.target : e; // event 또는 element 둘 다 허용
+  const deleting = !!(e && e.inputType && e.inputType.indexOf('delete') === 0);
+  const fmt = (d) => {
+    let out = '';
+    if (d.length > 0) out = d.slice(0, 4);
+    if (d.length >= 4) out += '년';
+    if (d.length > 4) out += ' ' + d.slice(4, 6);
+    if (d.length >= 6) out += '월';
+    if (d.length > 6) out += ' ' + d.slice(6, 8);
+    if (d.length >= 8) out += '일';
+    return out;
+  };
   let d = el.value.replace(/[^0-9]/g, '').slice(0, 8); // 숫자만, 최대 8자리
-  let out = '';
-  if (d.length > 0) out = d.slice(0, 4);
-  if (d.length >= 4) out += '년';
-  if (d.length > 4) out += ' ' + d.slice(4, 6);
-  if (d.length >= 6) out += '월';
-  if (d.length > 6) out += ' ' + d.slice(6, 8);
-  if (d.length >= 8) out += '일';
-  el.value = out;
+  // 접미사(년/월/일)만 지워졌을 때(숫자 개수는 그대로) → 숫자도 하나 지워서 삭제가 먹히게
+  if (deleting && el.value.length < fmt(d).length) {
+    d = d.slice(0, -1);
+  }
+  el.value = fmt(d);
 }
 // 화면 표시값("2023년 08월 25일") → 저장값("2023-08-25"). 형식이 안 맞으면 '' 반환
 function birthDisplayToISO(str) {
@@ -1746,6 +1755,7 @@ function showPage(name) {
   if (name === 'domains')     renderDomains();
   if (name === 'report')      renderReport();
   if (name === 'checkpoints') renderCheckpoints();
+  if (name === 'settings')    applyChildInfoToUI();
 }
 
 function renderAll() {
