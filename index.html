@@ -1473,7 +1473,7 @@ ${traitsBlock}${ageNote}
   "tag": "언어|자율성|감정|인지|애착|사회성|신체|양육|기타 중 가장 잘 맞는 하나",
   "quote": "이 관찰에서 가장 인상적인 발화나 행동을 20자 이내로. 없으면 빈 문자열",
   "summary": "무슨 일이 있었는지 2문장으로 담백하게. 과장 없이, 따뜻한 구어체로",
-  "analysis": "이 순간 아이가 어떻게 작동하고 있는지 2-3문장으로. 이전 관찰과 연결하거나 달라진 점을 구체적으로. 과잉 칭찬 없이, 부드럽고 따뜻한 구어체로(딱딱한 문어체 금지)"
+  "analysis": "이 순간 아이가 어떻게 작동하고 있는지 2-3문장으로. 이전 관찰이 함께 주어졌다면 그 흐름과 연결하거나 실제로 달라진 점을 구체적으로(주어지지 않았거나 연결점이 없으면 이번 관찰 자체에 충실하게 — 없는 비교나 변화는 절대 만들지 말 것). 과잉 칭찬 없이, 부드럽고 따뜻한 구어체로(딱딱한 문어체 금지)"
 }`;
 }
 
@@ -2038,6 +2038,29 @@ function openLightbox(src) {
 function closeLightbox() { document.getElementById('lightbox').classList.remove('show'); }
 
 // ════════════════════════════════════════════════════════════
+// 누적 맥락 — 이번 분석에 같은 아이의 "이전 기록"을 압축해 넘긴다.
+//  · 이게 "기억하는 AI"의 핵심. 새 관찰을 누적 기록 위에서 해석하게 함.
+//  · 호출 비용 관리: 전부 말고 최근 MAX_CTX개로 상한 (기록이 쌓여도 토큰이 무한정 늘지 않음).
+//  · 반환: null(이전 기록 없음) | { count, shown, lines }
+// ════════════════════════════════════════════════════════════
+const MAX_CTX = 20;
+function buildRecentContext(uptoDate) {
+  const cid = getActiveChildId();
+  const prior = observations
+    .filter(o => o && (!cid || !o.childId || o.childId === cid)) // 현재 아이만
+    .filter(o => !uptoDate || (o.date && o.date <= uptoDate))     // 이 관찰 시점 이전까지만
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));  // 오래된→최신(시간 흐름대로)
+  if (!prior.length) return null;
+  const recent = prior.slice(-MAX_CTX);
+  const lines = recent.map(o =>
+    `- [${o.date}][${o.tag || '기타'}] ${o.quote ? '"' + o.quote + '" ' : ''}${o.summary || ''}`
+  ).join('\n');
+  const omitted = prior.length - recent.length;
+  const tail = omitted > 0 ? `\n(그 이전 ${omitted}개 기록은 생략, 최근 ${recent.length}개만 표시)` : '';
+  return { count: prior.length, shown: recent.length, lines: lines + tail };
+}
+
+// ════════════════════════════════════════════════════════════
 // AI 분석
 // ════════════════════════════════════════════════════════════
 async function doAnalyze() {
@@ -2067,7 +2090,30 @@ async function doAnalyze() {
       });
     });
   }
-  userContent.push({ type: 'text', text: `날짜: ${date}\n\n관찰 내용:\n${text}` });
+  const ctx = buildRecentContext(date);
+  let userText;
+  if (ctx) {
+    userText =
+`【지금까지의 누적 관찰 — 참고용 맥락】
+아래는 이 아이의 이전 기록이에요(오래된 순, 총 ${ctx.count}개 중 최근 ${ctx.shown}개). 이번 관찰을 이 흐름 위에서 봐주세요. 실제로 이어지거나 달라진 점이 보일 때만 구체적으로 짚고, 억지로 연결하거나 없는 변화를 지어내지는 마세요.
+${ctx.lines}
+
+────────────────
+【이번에 새로 관찰한 것 — 분석 대상】
+날짜: ${date}
+
+관찰 내용:
+${text}`;
+  } else {
+    userText =
+`이 아이의 첫 기록이에요. 비교할 이전 관찰이 없으니 "이전보다", "지난번엔" 같은 과거 비교 표현은 쓰지 말고, 이번 관찰 자체에 충실하게 봐주세요.
+
+날짜: ${date}
+
+관찰 내용:
+${text}`;
+  }
+  userContent.push({ type: 'text', text: userText });
 
   try {
     const res = await callAnthropic(apiKey, {
