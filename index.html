@@ -1294,7 +1294,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 // ════════════════════════════════════════════════════════════
 // API 호출 헬퍼 — Cloudflare Worker 프록시 경유 (키는 서버에 숨김)
 // ════════════════════════════════════════════════════════════
-const PROXY_URL = 'https://imom-beta.vincent-zeee.workers.dev';
+const PROXY_URL = 'https://imom-beta-proxy.vercel.app/api/proxy';
 
 // ── 생년월일 입력: 숫자만 치면 "YYYY년 MM월 DD일"로 자동 표시 ──
 function formatBirth(e) {
@@ -1612,7 +1612,7 @@ async function saveChildSetup() {
   const traits = document.getElementById('setup-traits').value.trim();
   if (!name) { alert('아이 이름을 입력해주세요.'); return; }
   if (!birth) { alert('생년월일을 8자리로 입력해주세요. (예: 20230825)'); return; }
-  childInfo = { name, birth, sex, traits };
+  childInfo = { id: (childInfo && childInfo.id) || genChildId(), name, birth, sex, traits };
   await saveData();
   enterApp();
 }
@@ -1645,6 +1645,33 @@ function localKey() {
   return 'ubi_data_' + (currentUser ? currentUser.uid : 'anon');
 }
 
+// ════════════════════════════════════════════════════════════
+// 다중 아이(둘째·쌍둥이) 대비 — 데이터 구조 선반영
+//  · 지금은 아이 1명으로 동작하지만, 모든 기록에 childId를 심어둔다.
+//  · 나중에 아이 목록/전환 UI만 추가하면 되고, 기존 데이터 이사는 불필요.
+// ════════════════════════════════════════════════════════════
+function genChildId() {
+  return 'child_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+// 현재(활성) 아이의 id. 없으면 만들어 붙인다.
+function getActiveChildId() {
+  if (!childInfo) return null;
+  if (!childInfo.id) childInfo.id = genChildId();
+  return childInfo.id;
+}
+// 로드 직후 1회: 아이에 id 부여 + id 없는 기존 기록에 childId 백필.
+// 변경이 있으면 true 반환(→ 저장 필요). 이미 다 채워져 있으면 아무것도 안 함.
+function migrateChildData() {
+  let changed = false;
+  if (childInfo && !childInfo.id) { childInfo.id = genChildId(); changed = true; }
+  const cid = childInfo ? childInfo.id : null;
+  if (cid) {
+    for (const o of observations)   { if (o && !o.childId) { o.childId = cid; changed = true; } }
+    for (const r of monthlyReports) { if (r && !r.childId) { r.childId = cid; changed = true; } }
+  }
+  return changed;
+}
+
 async function loadData() {
   // 베타: 키는 Cloudflare Worker(서버)에 숨겨져 있으므로
   // 사용자는 키를 입력할 필요가 없다. 항상 프록시 모드로 동작.
@@ -1674,6 +1701,9 @@ async function loadData() {
   } else {
     loadFromLocal();
   }
+
+  // 다중 아이 대비: id 부여 + 기존 기록 childId 백필 (변경 시에만 저장)
+  if (migrateChildData()) { try { await saveData(); } catch(e) {} }
 
   updateApiStatus();
   const savedTokens = parseInt(localStorage.getItem('ubi_total_tokens') || '0');
@@ -2060,6 +2090,7 @@ async function doAnalyze() {
     const finalTag = manualTag || parsed.tag || '기타';
     pending = {
       id: Date.now(),
+      childId: getActiveChildId(),
       date,
       tag: finalTag,
       quote: parsed.quote || '',
@@ -2227,6 +2258,7 @@ async function genReport() {
     const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     monthlyReports.push({
       id: Date.now(),
+      childId: getActiveChildId(),
       month: monthKey,
       period: periodLabel,
       type,
@@ -2568,7 +2600,7 @@ async function saveChildInfo() {
   const traits = document.getElementById('set-child-traits').value.trim();
   if (!name) { alert('아이 이름을 입력해주세요.'); return; }
   if (!birth) { alert('생년월일을 8자리로 입력해주세요. (예: 20230825)'); return; }
-  childInfo = { name, birth, sex, traits };
+  childInfo = { id: (childInfo && childInfo.id) || genChildId(), name, birth, sex, traits };
   await saveData();
   applyChildInfoToUI();
   const msg = document.getElementById('child-save-msg');
