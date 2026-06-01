@@ -1332,10 +1332,22 @@ function birthISOToDisplay(iso) {
   return d.slice(0, 4) + '년 ' + d.slice(4, 6) + '월 ' + d.slice(6, 8) + '일';
 }
 async function callAnthropic(key, body) {
+  // 로그인 토큰을 함께 보낸다 → 프록시가 "우리 앱에 로그인한 사용자"인지 검증.
+  // 토큰이 없으면(로그인 안 됨) 호출하지 않는다.
+  let idToken = '';
+  try {
+    if (window._auth && window._auth.currentUser) {
+      idToken = await window._auth.currentUser.getIdToken();
+    }
+  } catch(e) {}
+  if (!idToken) {
+    return { ok: false, status: 401, json: () => Promise.resolve({ error: { message: '로그인이 필요해요. 다시 로그인해주세요.' } }) };
+  }
   const res = await fetch(PROXY_URL, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + idToken
     },
     body: JSON.stringify(body)
   });
@@ -2546,13 +2558,7 @@ async function saveApiKey() {
 
 async function testApiKey() {
   try {
-    const res = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] })
-    });
+    const res = await callAnthropic(apiKey, { model: 'claude-sonnet-4-6', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
     const data = await res.json();
     if (res.ok) {
       alert('✅ 연결 성공! 바로 사용하실 수 있어요.');
