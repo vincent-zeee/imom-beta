@@ -498,6 +498,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
   display: none;
 }
 .tl-card.expanded .tl-card-analysis { display: block; }
+.tl-card.expanded .tl-card-raw { display: block !important; }
 
 /* 편집 모드 */
 .tl-card-actions {
@@ -552,6 +553,52 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 }
 .tl-card-imgs img:hover { opacity: .85; }
 .tl-hint { font-size: 11px; color: var(--ink3); margin-top: 8px; }
+
+/* ── 핀(앵커) 버튼 ── */
+.tl-pin-btn {
+  font-size: 14px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  opacity: .3;
+  transition: opacity .15s;
+  line-height: 1;
+}
+.tl-pin-btn:hover { opacity: .7; }
+.tl-pin-btn.pinned { opacity: 1; }
+
+/* ── 합성 기억 ── */
+.synthesis-box {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink2);
+  white-space: pre-wrap;
+  margin: 10px 0;
+}
+.synthesis-textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: var(--ink);
+  background: #fff;
+  resize: vertical;
+}
+.synthesis-textarea:focus { outline: none; border-color: var(--accent-light); }
+.synthesis-meta {
+  font-size: 11px;
+  color: var(--ink3);
+  margin-top: 6px;
+}
 
 /* ── 영역별 ── */
 .domain-grid {
@@ -1101,10 +1148,14 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
       <span class="tag" id="prev-tag"></span>
     </div>
     <div class="preview-quote" id="prev-quote"></div>
+    <div class="preview-section-label" id="prev-raw-label" style="display:none">내가 쓴 원문</div>
+    <div class="preview-text" id="prev-raw" style="display:none;font-size:12px;color:var(--ink3);border-left:2px solid var(--line);padding-left:10px;white-space:pre-wrap"></div>
     <div class="preview-section-label">요약</div>
     <div class="preview-text" id="prev-summary"></div>
     <div class="preview-section-label">이 순간이 특별한 이유</div>
     <div class="preview-analysis" id="prev-analysis"></div>
+    <div class="preview-section-label" id="prev-answer-label" style="display:none">💬 답변</div>
+    <div class="preview-analysis" id="prev-answer" style="display:none"></div>
     <div class="preview-imgs" id="prev-imgs"></div>
     <div class="preview-actions">
       <button class="btn btn-primary" onclick="doSave()">저장</button>
@@ -1211,6 +1262,19 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
       <button class="btn btn-primary" onclick="saveChildInfo()">아이 정보 저장</button>
       <span class="save-msg" id="child-save-msg"></span>
     </div>
+  </div>
+
+  <div class="settings-card">
+    <div class="settings-label">AI 기억 (합성층)</div>
+    <div class="settings-desc">누적 관찰을 바탕으로 이 아이에 대해 AI가 파악한 것을 정리해요. 매 분석 시 맥락으로 들어가요.<br>
+    <b>직접 수정할 수 있어요.</b> AI가 틀린 부분은 고치고, 빠진 건 추가해주세요. 자동 갱신되지 않아요 — 원할 때 버튼을 눌러 새로 생성하세요.</div>
+    <div id="synthesis-container"></div>
+  </div>
+
+  <div class="settings-card">
+    <div class="settings-label">핀(기준점) 관리</div>
+    <div class="settings-desc">타임라인에서 📌 버튼으로 중요한 관찰을 기준점으로 고정하면, 기록이 아무리 쌓여도 매 분석에 항상 포함돼요.</div>
+    <div id="pinned-list-settings"></div>
   </div>
 
   <div class="settings-card">
@@ -1386,6 +1450,7 @@ let selDomain       = null;
 let pending         = null;
 let pendingImgs     = [];
 let totalTokens     = 0;
+let memorySynthesis = null; // {text, generatedAt, basedOnCount}
 let currentUser     = null;
 
 // ════════════════════════════════════════════════════════════
@@ -1484,8 +1549,9 @@ ${traitsBlock}${ageNote}
 {
   "tag": "언어|자율성|감정|인지|애착|사회성|신체|양육|기타 중 가장 잘 맞는 하나",
   "quote": "이 관찰에서 가장 인상적인 발화나 행동을 20자 이내로. 없으면 빈 문자열",
-  "summary": "무슨 일이 있었는지 2문장으로 담백하게. 과장 없이, 따뜻한 구어체로",
-  "analysis": "이 순간 아이가 어떻게 작동하고 있는지 2-3문장으로. 이전 관찰이 함께 주어졌다면 그 흐름과 연결하거나 실제로 달라진 점을 구체적으로(주어지지 않았거나 연결점이 없으면 이번 관찰 자체에 충실하게 — 없는 비교나 변화는 절대 만들지 말 것). 과잉 칭찬 없이, 부드럽고 따뜻한 구어체로(딱딱한 문어체 금지)"
+  "summary": "무슨 일이 있었는지 간결하게(2~4문장). 과장 없이, 있었던 일 그대로. 따뜻한 구어체로",
+  "analysis": "이 순간 아이가 뭘 하고 있는 건지, 이전 관찰이 함께 주어졌다면 그 흐름과 어떻게 이어지거나 달라지는지를 2~4문장으로(주어지지 않았거나 연결점이 없으면 이번 관찰 자체에 충실하게 — 없는 비교나 변화는 절대 만들지 말 것). 과잉 칭찬 없이, 같이 발견하는 따뜻한 톤으로",
+  "answer": "부모가 질문을 포함한 경우('이게 정상이야?', '어떻게 하면 좋을까?' 등) 여기에 따뜻하게 답해주세요. 의학적 판단은 절대 금지. 질문이 없으면 빈 문자열"
 }`;
 }
 
@@ -1698,6 +1764,7 @@ async function loadData() {
         checkpoints    = d.checkpoints    || [];
         monthlyReports = d.monthlyReports || [];
         childInfo      = d.childInfo      || null;
+        memorySynthesis = d.memorySynthesis || null;
         showSyncStatus('✓ 동기화됨');
       } else {
         // 새 계정 — 빈 상태로 시작
@@ -1705,6 +1772,7 @@ async function loadData() {
         checkpoints    = getDefaultCp();
         monthlyReports = [];
         childInfo      = null;
+        memorySynthesis = null;
       }
     } catch(e) {
       console.log('Firebase 로드 실패, localStorage 폴백:', e.message);
@@ -1736,22 +1804,25 @@ function loadFromLocal() {
       checkpoints    = d.checkpoints    || getDefaultCp();
       monthlyReports = d.monthlyReports || [];
       childInfo      = d.childInfo      || null;
+      memorySynthesis = d.memorySynthesis || null;
     } else {
       observations   = [];
       checkpoints    = getDefaultCp();
       monthlyReports = [];
       childInfo      = null;
+      memorySynthesis = null;
     }
   } catch(e) {
     observations   = [];
     checkpoints    = getDefaultCp();
     monthlyReports = [];
     childInfo      = null;
+    memorySynthesis = null;
   }
 }
 
 async function saveData() {
-  const payload = { observations, checkpoints, monthlyReports, childInfo, savedAt: new Date().toISOString() };
+  const payload = { observations, checkpoints, monthlyReports, childInfo, memorySynthesis, savedAt: new Date().toISOString() };
   // API 키는 Firestore에 저장하지 않습니다 (localStorage 전용).
 
   // Firebase 저장
@@ -1827,6 +1898,8 @@ function renderAll() {
   renderDomains();
   renderReport();
   renderCheckpoints();
+  renderSynthesisUI();
+  renderPinnedListSettings();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1878,6 +1951,7 @@ function renderTimeline() {
       <div class="tl-card" data-id="${o.id}" onclick="toggleTlCard(event, this)">
         <div class="tl-card-header">
           <span class="${tc(o.tag)}">${o.tag || '기타'}</span>
+          <button class="tl-pin-btn${o.pinned?' pinned':''}" onclick="togglePin(${o.id}, event)" title="${o.pinned?'고정 해제':'기준점 고정'}">📌</button>
           <div class="tl-card-actions">
             <button class="tl-edit-btn" onclick="event.stopPropagation();startEditObs(${o.id})">수정</button>
             <button class="tl-edit-btn danger" onclick="event.stopPropagation();deleteObs(${o.id})">삭제</button>
@@ -1900,7 +1974,9 @@ function renderTimeline() {
             ${o.images.map(img => `<img src="${img}" alt="" onclick="event.stopPropagation();openLightbox(this.src)">`).join('')}
           </div>` : ''}
         ${o.analysis ? `
+          ${o.raw ? `<div class="tl-card-raw" style="display:none;font-size:12px;color:var(--ink3);line-height:1.6;margin-top:8px;padding:8px 10px;border-left:2px solid var(--line);white-space:pre-wrap">${o.raw}</div>` : ''}
           <div class="tl-card-analysis">${o.analysis}</div>
+          ${o.answer ? `<div class="tl-card-analysis" style="display:none;border-left:2px solid var(--accent-light)"><b style="font-size:11px;color:var(--accent)">💬 답변</b><br>${o.answer}</div>` : ''}
           <div class="tl-hint">▸ 이 순간이 특별한 이유</div>` : ''}
       </div>
     </div>
@@ -2072,26 +2148,229 @@ function openLightbox(src) {
 function closeLightbox() { document.getElementById('lightbox').classList.remove('show'); }
 
 // ════════════════════════════════════════════════════════════
-// 누적 맥락 — 이번 분석에 같은 아이의 "이전 기록"을 압축해 넘긴다.
-//  · 이게 "기억하는 AI"의 핵심. 새 관찰을 누적 기록 위에서 해석하게 함.
-//  · 호출 비용 관리: 전부 말고 최근 MAX_CTX개로 상한 (기록이 쌓여도 토큰이 무한정 늘지 않음).
-//  · 반환: null(이전 기록 없음) | { count, shown, lines }
+// 3층 맥락 기억 시스템
+//  · 합성층: memorySynthesis — "지금까지 파악한 것" (수동 갱신, 편집 가능)
+//  · 최근층: 최근 K개 관찰 (analysis 포함)
+//  · 태그층: 오늘 태그의 같은 영역 직전 몇 개 (recency 밖이어도)
+//  · 앵커: pinned 관찰은 항상 포함 (recency 무관)
 // ════════════════════════════════════════════════════════════
-const MAX_CTX = 20;
-function buildRecentContext(uptoDate) {
+const MAX_RECENT  = 10;  // 최근층 상한
+const MAX_TAG_PULL = 4;  // 태그층 상한
+
+function buildRecentContext(uptoDate, currentTag) {
   const cid = getActiveChildId();
-  const prior = observations
-    .filter(o => o && (!cid || !o.childId || o.childId === cid)) // 현재 아이만
-    .filter(o => !uptoDate || (o.date && o.date <= uptoDate))     // 이 관찰 시점 이전까지만
-    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));  // 오래된→최신(시간 흐름대로)
-  if (!prior.length) return null;
-  const recent = prior.slice(-MAX_CTX);
-  const lines = recent.map(o =>
-    `- [${o.date}][${o.tag || '기타'}] ${o.quote ? '"' + o.quote + '" ' : ''}${o.summary || ''}`
-  ).join('\n');
-  const omitted = prior.length - recent.length;
-  const tail = omitted > 0 ? `\n(그 이전 ${omitted}개 기록은 생략, 최근 ${recent.length}개만 표시)` : '';
-  return { count: prior.length, shown: recent.length, lines: lines + tail };
+  const all = observations
+    .filter(o => o && (!cid || !o.childId || o.childId === cid))
+    .filter(o => !uptoDate || (o.date && o.date <= uptoDate))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  if (!all.length && !memorySynthesis) return null;
+
+  // ── 관찰 한 줄 포맷 (analysis 포함) ──
+  const fmtObs = (o, label) => {
+    let line = `- [${o.date}][${o.tag || '기타'}]`;
+    if (label) line += `[${label}]`;
+    if (o.quote) line += ` "${o.quote}"`;
+    line += ' ' + (o.summary || '');
+    if (o.analysis) line += ' → ' + o.analysis.substring(0, 200);
+    return line;
+  };
+
+  // ── 1) 앵커: pinned 관찰 (recency 무관) ──
+  const pinned = all.filter(o => o.pinned);
+
+  // ── 2) 최근 K개 (앵커와 중복 제거) ──
+  const pinnedIds = new Set(pinned.map(o => o.id));
+  const recentPool = all.filter(o => !pinnedIds.has(o.id));
+  const recent = recentPool.slice(-MAX_RECENT);
+
+  // ── 3) 태그층: 같은 태그의 직전 몇 개 (앵커·최근과 중복 제거) ──
+  const usedIds = new Set([...pinnedIds, ...recent.map(o => o.id)]);
+  let tagPull = [];
+  if (currentTag && currentTag !== '기타') {
+    tagPull = all
+      .filter(o => (o.tag || '기타') === currentTag && !usedIds.has(o.id))
+      .slice(-MAX_TAG_PULL);
+  }
+
+  // ── 조립 ──
+  const sections = [];
+
+  // 합성층
+  if (memorySynthesis && memorySynthesis.text) {
+    sections.push(
+`【이 아이에 대해 지금까지 파악한 것 — 잠정적 그림】
+아래는 누적 관찰을 바탕으로 정리한 이 아이의 특성이에요. 다만 이건 지금까지의 그림일 뿐이에요. 이번 관찰이 여기서 벗어나면, 벗어난 부분을 더 중요하게 봐주세요.
+${memorySynthesis.text}`);
+  }
+
+  // 앵커
+  if (pinned.length) {
+    sections.push(
+`【기준점 관찰 — 부모가 중요하다고 표시한 것】
+${pinned.map(o => fmtObs(o, '📌')).join('\n')}`);
+  }
+
+  // 태그층
+  if (tagPull.length) {
+    sections.push(
+`【같은 영역(${currentTag})의 이전 기록 — 흐름 참고용】
+${tagPull.map(o => fmtObs(o)).join('\n')}`);
+  }
+
+  // 최근층
+  if (recent.length) {
+    const omitted = all.length - pinned.length - recent.length - tagPull.length;
+    sections.push(
+`【최근 관찰 ${recent.length}개 — 단기 흐름】
+${recent.map(o => fmtObs(o)).join('\n')}${omitted > 0 ? `\n(그 외 ${omitted}개 기록 생략)` : ''}`);
+  }
+
+  if (!sections.length) return null;
+  return {
+    count: all.length,
+    shown: pinned.length + recent.length + tagPull.length,
+    text: sections.join('\n\n')
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// 합성 기억 생성 (수동 트리거)
+// ════════════════════════════════════════════════════════════
+async function genSynthesis() {
+  if (!apiKey) { toast('API 연결을 먼저 확인해주세요.'); return; }
+  if (!observations.length) { toast('기록이 없어서 합성할 수 없어요.'); return; }
+
+  const btn = document.getElementById('btn-gen-synthesis');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 생성 중...'; }
+
+  const cid = getActiveChildId();
+  const all = observations
+    .filter(o => o && (!cid || !o.childId || o.childId === cid))
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  // raw 관찰을 압축해서 넘기기 (합성의 합성 금지 — 항상 raw에서 생성)
+  const obsLines = all.map(o => {
+    let line = `[${o.date}][${o.tag || '기타'}]`;
+    if (o.quote) line += ` "${o.quote}"`;
+    line += ' ' + (o.summary || '');
+    if (o.analysis) line += ' → ' + o.analysis.substring(0, 150);
+    return line;
+  }).join('\n');
+
+  const name = getChildName();
+  const ageLabel = getChildAgeLabel();
+  const prompt = `아래는 ${name}${ageLabel ? '(현재 ' + ageLabel + ')' : ''}의 성장 관찰 기록 전체입니다 (${all.length}개, 오래된순).
+
+${obsLines}
+
+위 기록을 바탕으로, 이 아이에 대해 "지금까지 파악한 것"을 정리해주세요.
+
+【작성 규칙】
+- 이건 확정된 판단이 아니라 "잠정적 그림"이에요. 단정하지 말고 "~하는 경향이 보여요", "~인 것 같아요" 식으로
+- 반복 관찰된 패턴 위주로. 한 번만 나온 건 패턴이 아님
+- "빠르다", "영재", "상위 X%", "X세 수준" 같은 단정 금지
+- 라벨("통제적인 아이", "착한 아이") 대신 구체적 행동 묘사
+- 부정적이거나 미숙한 점도 솔직하게
+- 따뜻한 구어체 ("~네요", "~같아요"), 논문체 금지
+- 800자 이내로 핵심만`;
+
+  try {
+    const res = await callAnthropic(apiKey, {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      system: buildSYS(),
+      messages: [{ role: 'user', content: prompt }]
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const text = (data.content?.[0]?.text || '').trim();
+    if (!text) throw new Error('빈 응답');
+
+    memorySynthesis = {
+      text,
+      generatedAt: new Date().toISOString(),
+      basedOnCount: all.length
+    };
+    await saveData();
+    renderSynthesisUI();
+    toast('기억이 갱신됐어요 ✓');
+  } catch(e) {
+    toast('기억 생성 실패: ' + e.message);
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = '기억 새로 생성'; }
+}
+
+async function saveSynthesisEdit() {
+  const el = document.getElementById('synthesis-edit');
+  if (!el) return;
+  if (!memorySynthesis) memorySynthesis = {};
+  memorySynthesis.text = el.value.trim();
+  memorySynthesis.editedAt = new Date().toISOString();
+  await saveData();
+  toast('기억 수정 저장 ✓');
+  renderSynthesisUI();
+}
+
+function renderSynthesisUI() {
+  const container = document.getElementById('synthesis-container');
+  if (!container) return;
+  if (memorySynthesis && memorySynthesis.text) {
+    const meta = [];
+    if (memorySynthesis.generatedAt) {
+      const d = new Date(memorySynthesis.generatedAt);
+      meta.push(`생성: ${d.getMonth()+1}/${d.getDate()}`);
+    }
+    if (memorySynthesis.basedOnCount) meta.push(`기록 ${memorySynthesis.basedOnCount}개 기반`);
+    if (memorySynthesis.editedAt) meta.push('(수정됨)');
+
+    container.innerHTML = `
+      <textarea class="synthesis-textarea" id="synthesis-edit">${memorySynthesis.text}</textarea>
+      <div class="synthesis-meta">${meta.join(' · ')}</div>
+      <div class="settings-row" style="margin-top:8px">
+        <button class="btn btn-primary" onclick="saveSynthesisEdit()">수정 저장</button>
+        <button class="btn" id="btn-gen-synthesis" onclick="genSynthesis()">기억 새로 생성</button>
+      </div>`;
+  } else {
+    container.innerHTML = `
+      <div style="font-size:13px;color:var(--ink3);margin:8px 0">아직 합성 기억이 없어요. 기록이 쌓이면 생성해보세요.</div>
+      <button class="btn btn-primary" id="btn-gen-synthesis" onclick="genSynthesis()">기억 생성</button>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// 핀(앵커) 토글
+// ════════════════════════════════════════════════════════════
+async function togglePin(id, ev) {
+  if (ev) ev.stopPropagation();
+  const obs = observations.find(o => o.id === id);
+  if (!obs) return;
+  obs.pinned = !obs.pinned;
+  await saveData();
+  renderTimeline();
+  renderPinnedListSettings();
+  toast(obs.pinned ? '📌 기준점으로 고정했어요' : '고정 해제했어요');
+}
+
+function renderPinnedListSettings() {
+  const el = document.getElementById('pinned-list-settings');
+  if (!el) return;
+  const pinned = observations.filter(o => o.pinned).sort((a,b) => (a.date||'').localeCompare(b.date||''));
+  if (!pinned.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--ink3);margin:8px 0">아직 고정된 기록이 없어요.</div>';
+    return;
+  }
+  el.innerHTML = pinned.map(o => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <span class="${tc(o.tag)}">${o.tag||'기타'}</span>
+      <span style="font-size:12px;color:var(--ink3)">${o.date}</span>
+      <span style="font-size:13px;color:var(--ink2);flex:1">${(o.quote || o.summary || '').substring(0,40)}${(o.quote||o.summary||'').length>40?'…':''}</span>
+      <button class="tl-edit-btn" onclick="togglePin(${o.id})">해제</button>
+    </div>
+  `).join('');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2124,13 +2403,14 @@ async function doAnalyze() {
       });
     });
   }
-  const ctx = buildRecentContext(date);
+  const ctx = buildRecentContext(date, manualTag || null);
   let userText;
   if (ctx) {
     userText =
-`【지금까지의 누적 관찰 — 참고용 맥락】
-아래는 이 아이의 이전 기록이에요(오래된 순, 총 ${ctx.count}개 중 최근 ${ctx.shown}개). 이번 관찰을 이 흐름 위에서 봐주세요. 실제로 이어지거나 달라진 점이 보일 때만 구체적으로 짚고, 억지로 연결하거나 없는 변화를 지어내지는 마세요.
-${ctx.lines}
+`【지금까지의 누적 맥락 — 참고용】
+이 아이의 이전 기록이에요 (총 ${ctx.count}개 중 ${ctx.shown}개 표시). 이번 관찰을 이 흐름 위에서 봐주세요. 실제로 이어지거나 달라진 점이 보일 때만 구체적으로 짚고, 억지로 연결하거나 없는 변화를 지어내지는 마세요.
+
+${ctx.text}
 
 ────────────────
 【이번에 새로 관찰한 것 — 분석 대상】
@@ -2173,9 +2453,11 @@ ${text}`;
       childId: getActiveChildId(),
       date,
       tag: finalTag,
+      raw: text,
       quote: parsed.quote || '',
       summary: parsed.summary || text,
       analysis: parsed.analysis || '',
+      answer: parsed.answer || '',
       images: pendingImgs.map(i => i.dataUrl)
     };
 
@@ -2187,6 +2469,16 @@ ${text}`;
     pq.style.display = parsed.quote ? 'block' : 'none';
     document.getElementById('prev-summary').textContent = parsed.summary || '';
     document.getElementById('prev-analysis').textContent = parsed.analysis || '';
+    const prevRaw = document.getElementById('prev-raw');
+    const prevRawLabel = document.getElementById('prev-raw-label');
+    if (prevRaw && text) { prevRaw.textContent = text; prevRaw.style.display = 'block'; }
+    if (prevRawLabel && text) { prevRawLabel.style.display = 'block'; }
+    const prevAnswer = document.getElementById('prev-answer');
+    const prevAnswerLabel = document.getElementById('prev-answer-label');
+    if (prevAnswer && parsed.answer) { prevAnswer.textContent = parsed.answer; prevAnswer.style.display = 'block'; }
+    else if (prevAnswer) { prevAnswer.style.display = 'none'; }
+    if (prevAnswerLabel && parsed.answer) { prevAnswerLabel.style.display = 'block'; }
+    else if (prevAnswerLabel) { prevAnswerLabel.style.display = 'none'; }
     document.getElementById('prev-imgs').innerHTML = pending.images.map(img =>
       `<img src="${img}" style="height:80px;border-radius:6px;object-fit:cover;border:1px solid var(--line)">`
     ).join('');
@@ -2328,6 +2620,10 @@ async function genReport() {
       system: buildSYS(),
       messages: [{ role: 'user', content: prompts[type] }]
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
     const data = await res.json();
     const text = data.content?.[0]?.text || '';
     const safeText = text.replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -2455,6 +2751,10 @@ ${summaries}
       system: buildSYS(),
       messages: [{ role: 'user', content: prompt }]
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
     const data = await res.json();
     const text = (data.content?.[0]?.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     el.innerHTML = `<div class="report-box">${text}</div>`;
@@ -2572,7 +2872,7 @@ async function testApiKey() {
 // JSON 내보내기 / 가져오기
 // ════════════════════════════════════════════════════════════
 function exportJSON() {
-  const data = JSON.stringify({ observations, checkpoints, monthlyReports, childInfo, exportedAt: new Date().toISOString() }, null, 2);
+  const data = JSON.stringify({ observations, checkpoints, monthlyReports, childInfo, memorySynthesis, exportedAt: new Date().toISOString() }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2593,6 +2893,7 @@ async function handleImport(input) {
     if (Array.isArray(data.checkpoints))    checkpoints    = data.checkpoints;
     if (Array.isArray(data.monthlyReports)) monthlyReports = data.monthlyReports;
     if (data.childInfo)                     childInfo      = data.childInfo;
+    if (data.memorySynthesis)               memorySynthesis = data.memorySynthesis;
     migrateChildData();
     await saveData();
     applyChildInfoToUI();
