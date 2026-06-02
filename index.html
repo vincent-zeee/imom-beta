@@ -582,7 +582,8 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
 }
 .synthesis-textarea {
   width: 100%;
-  min-height: 120px;
+  min-height: 200px;
+  max-height: 70vh;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -592,6 +593,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
   color: var(--ink);
   background: #fff;
   resize: vertical;
+  overflow-y: auto;
 }
 .synthesis-textarea:focus { outline: none; border-color: var(--accent-light); }
 .synthesis-meta {
@@ -1137,6 +1139,7 @@ input[type="date"]:focus, select:focus { outline: none; border-color: var(--acce
         <option value="양육">양육</option>
       </select>
       <button class="btn btn-primary" id="btn-analyze" onclick="doAnalyze()">AI 분석 후 저장</button>
+      <span id="daily-count-label" style="font-size:11px;color:var(--ink3);margin-left:8px"></span>
     </div>
     <div class="err-msg" id="err-msg"></div>
   </div>
@@ -1900,6 +1903,7 @@ function renderAll() {
   renderCheckpoints();
   renderSynthesisUI();
   renderPinnedListSettings();
+  updateDailyLabel();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2286,8 +2290,9 @@ ${obsLines}
       throw new Error(err.error?.message || `HTTP ${res.status}`);
     }
     const data = await res.json();
-    const text = (data.content?.[0]?.text || '').trim();
+    let text = (data.content?.[0]?.text || '').trim();
     if (!text) throw new Error('빈 응답');
+    text = text.replace(/\*\*/g, '').replace(/\*/g, '').replace(/^#+\s*/gm, '').replace(/^[-·•]\s*/gm, '· ');
 
     memorySynthesis = {
       text,
@@ -2315,6 +2320,13 @@ async function saveSynthesisEdit() {
   renderSynthesisUI();
 }
 
+function autoResizeSynthesis() {
+  const el = document.getElementById('synthesis-edit');
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.7) + 'px';
+}
+
 function renderSynthesisUI() {
   const container = document.getElementById('synthesis-container');
   if (!container) return;
@@ -2328,12 +2340,13 @@ function renderSynthesisUI() {
     if (memorySynthesis.editedAt) meta.push('(수정됨)');
 
     container.innerHTML = `
-      <textarea class="synthesis-textarea" id="synthesis-edit">${memorySynthesis.text}</textarea>
+      <textarea class="synthesis-textarea" id="synthesis-edit" oninput="autoResizeSynthesis()">${memorySynthesis.text}</textarea>
       <div class="synthesis-meta">${meta.join(' · ')}</div>
       <div class="settings-row" style="margin-top:8px">
         <button class="btn btn-primary" onclick="saveSynthesisEdit()">수정 저장</button>
         <button class="btn" id="btn-gen-synthesis" onclick="genSynthesis()">기억 새로 생성</button>
       </div>`;
+    setTimeout(() => autoResizeSynthesis(), 0);
   } else {
     container.innerHTML = `
       <div style="font-size:13px;color:var(--ink3);margin:8px 0">아직 합성 기억이 없어요. 기록이 쌓이면 생성해보세요.</div>
@@ -2374,12 +2387,47 @@ function renderPinnedListSettings() {
 }
 
 // ════════════════════════════════════════════════════════════
+// 일일 분석 제한 (베타)
+// ════════════════════════════════════════════════════════════
+const DAILY_LIMIT = 5;
+
+function getDailyCount() {
+  const key = 'ubi_daily_' + new Date().toISOString().split('T')[0];
+  return parseInt(localStorage.getItem(key) || '0');
+}
+
+function incrementDailyCount() {
+  const key = 'ubi_daily_' + new Date().toISOString().split('T')[0];
+  const count = parseInt(localStorage.getItem(key) || '0') + 1;
+  localStorage.setItem(key, count);
+  updateDailyLabel();
+  return count;
+}
+
+function updateDailyLabel() {
+  const el = document.getElementById('daily-count-label');
+  if (!el) return;
+  const remain = DAILY_LIMIT - getDailyCount();
+  if (remain <= 0) {
+    el.textContent = '오늘 기록 다 썼어요';
+    el.style.color = 'var(--accent)';
+  } else {
+    el.textContent = `오늘 ${remain}회 남음`;
+    el.style.color = 'var(--ink3)';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
 // AI 분석
 // ════════════════════════════════════════════════════════════
 async function doAnalyze() {
   const text = document.getElementById('obs-text').value.trim();
   if (!text) { setErr('내용을 입력해주세요.'); return; }
   if (text.length > 2000) { setErr('기록은 2000자 이내로 적어주세요. (지금 ' + text.length + '자)'); return; }
+  if (getDailyCount() >= DAILY_LIMIT) {
+    alert('아직 베타 버전이라 하루 ' + DAILY_LIMIT + '회까지 기록할 수 있어요.\n내일 다시 기록해주세요 — 곧 늘릴게요! 🙏');
+    return;
+  }
   if (!apiKey) {
     setErr('설정에서 API Key를 먼저 입력해주세요.');
     return;
@@ -2512,6 +2560,7 @@ async function doSave() {
   }
   observations.push(pending);
   await saveData();
+  incrementDailyCount();
   pending = null;
   pendingImgs = [];
   document.getElementById('obs-text').value = '';
